@@ -1,0 +1,260 @@
+import init.qcom-etc.rc
+import init.qcom.usb.rc
+import init.sony.usb.rc
+
+on early-init
+    export EXTERNAL_STORAGE /storage/sdcard0
+    export SECONDARY_STORAGE /storage/sdcard1
+
+    mkdir /storage 0050 system sdcard_r
+    mkdir /storage/sdcard0 0000 system system
+    mkdir /storage/sdcard1 0000 system system
+
+    # for backwards compatibility
+    symlink /storage/sdcard0 /mnt/sdcard
+    symlink /storage/sdcard0 /sdcard
+    symlink /storage/sdcard1 /external_sd
+    symlink /storage/sdcard1 /mnt/external_sd
+
+    mkdir /mnt/usbdisk 0755 system system
+
+on init
+    symlink /dev/socket /tmp
+
+# This section is used when running on S1boot
+on fs
+    # Mount partition
+    mount_all /fstab.sony
+
+    # we will remap this as /storage/sdcard0 with the sdcard fuse tool
+    mkdir /data/media 0770 media_rw media_rw
+    mount_all /fstab_sd.sony
+    chown media_rw media_rw /data/media
+
+    # Fix wrong permissions set on /data/media from stock rom
+    chown media_rw media_rw /data/media/Android
+    chmod 0775 /data/media/Android
+    chown media_rw media_rw /data/media/Android/data
+    chmod 0775 /data/media/Android/data
+    chown media_rw media_rw /data/media/Alarms
+    chmod 0775 /data/media/Alarms
+    chown media_rw media_rw /data/media/DCIM
+    chmod 0775 /data/media/DCIM
+    chown media_rw media_rw /data/media/DCIM/.thumbnails
+    chmod 0775 /data/media/DCIM/.thumbnails
+    chown media_rw media_rw /data/media/DCIM/100ANDRO
+    chmod 0775 /data/media/DCIM/100ANDRO
+    chown media_rw media_rw /data/media/DCIM/Camera
+    chmod 0775 /data/media/DCIM/Camera
+    chown media_rw media_rw /data/media/Notifications
+    chmod 0775 /data/media/Notifications
+    chown media_rw media_rw /data/media/Pictures
+    chmod 0775 /data/media/Pictures
+    chown media_rw media_rw /data/media/Ringtones
+    chmod 0775 /data/media/Ringtones
+
+    setprop ro.crypto.fuse_sdcard true
+
+    mkdir /tombstones 0771 system system
+    mkdir /tombstones/modem 0771 system system
+    mkdir /tombstones/lpass 0771 system system
+    mkdir /tombstones/wcnss 0771 system system
+    mkdir /tombstones/dsps 0771 system system
+    exec /system/bin/sh /system/etc/init.qcom.modem_links.sh
+
+    # SEMC: Start the TrimArea Daemon and early TA-users
+    class_start trimarea
+    exec /system/bin/wait4tad
+    exec /sbin/mr
+    exec /system/bin/taimport
+    start ta_qmi_service
+
+    # SEMC: Remote storage service should be started after master reset
+    # due to that the modem file system is formatted in the master reset
+    start rmt_storage
+
+on post-fs
+    # Touch firmware update
+    write /data/etc/touch_default_module_id 32
+    mkdir /data/pc 700 radio radio
+
+on post-fs-data
+    chown system system /sys/devices/platform/msm_otg/msm_hsusb/gadget/lun1/file
+    chmod 0660 /sys/devices/platform/msm_otg/msm_hsusb/gadget/lun1/file
+    write /sys/devices/platform/msm_otg/msm_hsusb/gadget/lun0/nofua 1
+    write /sys/devices/platform/msm_otg/msm_hsusb/gadget/lun1/nofua 1
+
+    mkdir /data/misc/sensors 0775 root root
+    write /data/system/sensors/settings 0
+    chmod 0664 /data/system/sensors/settings
+
+    mkdir /data/misc/wifi/prima 0775 wifi wifi
+
+    # Camera
+    mkdir /data/camera 0771 root camera
+
+on early-boot
+# Permissions for AKM897x sensor
+    chown system system /data/misc/akm_set.txt
+    chown system system /sys/class/compass/akm8972/interval
+    chown system system /sys/class/compass/akm8972/single
+    chown system system /sys/class/compass/akm8972/registers
+    exec /sbin/fota-ua c
+
+    #Run pre_hw_config.sh before entering charge only mode.
+    exec /system/bin/sh /system/etc/pre_hw_config.sh
+
+    # Start the offline charging (This blocks booting further in some cases)
+    exec /system/bin/chargemon
+
+    # Touch firmware update
+    exec /system/bin/sh /system/etc/clearpad_fwloader.sh
+
+on boot
+    # Owner for the proximity sensor
+    chown system system /sys/devices/i2c-12/12-0054/threshold
+    chown system system /sys/devices/i2c-12/12-0054/nburst
+
+    # LM35xx/cameralight
+    chown system system /sys/devices/i2c-10/10-0053/torch_enable
+    chmod 666 /sys/devices/i2c-10/10-0053/torch_enable
+    chown system system /sys/devices/i2c-10/10-0053/torch_current
+    chmod 666 /sys/devices/i2c-10/10-0053/torch_current
+    chown system camera /sys/devices/i2c-10/10-0053/privacy_enable
+    chown system camera /sys/devices/i2c-10/10-0053/privacy_current
+    chown system camera /sys/devices/i2c-10/10-0053/flash_enable
+    chown system camera /sys/devices/i2c-10/10-0053/flash_duration
+    chown system camera /sys/devices/i2c-10/10-0053/flash_synchronization
+    chown system camera /sys/devices/i2c-10/10-0053/flash_current
+    chown system camera /sys/devices/i2c-10/10-0053/status
+
+    # Panel backlight
+    chown system system /sys/class/leds/led_1-lcd/brightness
+    chmod 660 /sys/class/leds/led_1-lcd/brightness
+
+    # LED
+    chown system system /sys/class/leds/led_7-rgb1-red/brightness
+    chmod 660 /sys/class/leds/led_7-rgb1-red/brightness
+    chown system system /sys/class/leds/led_8-rgb2-green/brightness
+    chmod 660 /sys/class/leds/led_8-rgb2-green/brightness
+    chown system system /sys/class/leds/led_9-rgb3-blue/brightness
+    chmod 660 /sys/class/leds/led_9-rgb3-blue/brightness
+    chown system system /sys/class/leds/led_7-rgb1-red/trigger
+    chmod 660 /sys/class/leds/led_7-rgb1-red/trigger
+    chown system system /sys/class/leds/led_8-rgb2-green/trigger
+    chmod 660 /sys/class/leds/led_8-rgb2-green/trigger
+    chown system system /sys/class/leds/led_9-rgb3-blue/trigger
+    chmod 660 /sys/class/leds/led_9-rgb3-blue/trigger
+
+    # AS3676/Ambient Light Sensor
+    chown system system /sys/devices/i2c-10/10-0040/als_on
+    chmod 666 /sys/devices/i2c-10/10-0040/als_on
+
+    # Vibrator
+    chown system system /sys/devices/i2c-12/12-0049/intensity
+    chmod 666 /sys/devices/i2c-12/12-0049/intensity
+
+    # Disable C_A_D
+    exec system/bin/ctrlaltdel soft
+
+    # USB Host support
+    mkdir /dev/bus 0711 system system
+    mkdir /dev/bus/usb 0711 system system
+
+    # Turn on WCNSS subsystem
+    write /dev/wcnss_wlan 1
+
+    # insmod the cfg80211 module
+    insmod /system/lib/modules/cfg80211.ko
+
+    write /proc/sys/kernel/watchdog_thresh 5
+
+    # Configurate TCP/IP kernel settings
+    exec /system/bin/sh /system/etc/init.netconfig.sh
+
+    # Bluetooth mac address
+    setprop ro.bt.bdaddr_path "/data/etc/bluetooth_bdaddr"
+    chown bluetooth bluetooth ro.bt.bdaddr_path
+
+    # Change owner and group to get adopter/device ids from MHL driver
+    chown system system /sys/class/mhl/sii8334/adopter_id
+    chown system system /sys/class/mhl/sii8334/device_id
+
+    # To use non-Google assistance server
+    setprop ro.gps.agps_provider customized
+    write /sys/devices/i2c-3/3-0024/cyttsp_update_fw 1
+
+    # Do not power down SIM in flight mode (required for Wi-Fi EAP-SIM)
+    setprop persist.radio.apm_sim_not_pwdn 1
+
+    # Enable Power save functionality for modem
+    setprop persist.radio.add_power_save 1
+    exec /system/bin/cal_data_manager
+
+    mount debugfs /sys/kernel/debug /sys/kernel/debug
+
+# create virtual SD card at /storage/sdcard0, based on the /data/media directory
+# daemon will drop to user/group system/media_rw after initializing
+# underlying files in /data/media will be created with user and group media_rw (1023)
+service sdcard /system/bin/sdcard /data/media 1023 1023
+    class late_start
+
+# Fast Dormancy
+service fast-dormancy /system/bin/fast-dormancy
+    class main
+
+on property:ro.semc.enable.fast_dormancy=false
+stop fast-dormancy
+
+# Update WIFI MAC address
+service mac-update /system/bin/mac-update
+    user root
+    group root
+    oneshot
+    class main
+
+# Start ric
+service ric /system/bin/ric
+    user root
+    group root
+    class main
+
+service secchan /system/bin/secchand
+    user system
+    group system
+    class core
+
+service usbeng /system/bin/usbeng
+    class late_start
+    oneshot
+
+# SEMC: TrimArea Daemon
+# last 2 args: start block(blk size 128k), number of blocks(partitionsize(kb) /128(kb))
+service tad /system/bin/tad /dev/block/mmcblk0 1,16
+    user root
+    group root
+    socket tad stream 0660 system system
+    class trimarea
+
+# Trim Area QMI service
+service ta_qmi_service /system/bin/ta_qmi_service
+    user system
+    disabled
+
+service updatemiscta /system/bin/updatemiscta
+    class main
+    user root
+    oneshot
+
+service hw_config /system/bin/sh /system/etc/hw_config.sh
+    class main
+    user root
+    oneshot
+
+service mpdecision /system/bin/mpdecision --no_sleep --avg_comp
+    user root
+    disabled
+
+service system_monitor /system/bin/system_monitor
+    class core
+    user root

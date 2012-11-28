@@ -1,0 +1,16 @@
+#
+# ADDITIONAL_DEFAULT_PROPERTIES
+#
+persist.sys.usb.config=mtp,adb
+drm.service.enabled=true
+ro.com.google.apphider=off
+ro.secure=0
+ro.allow.mock.location=0
+ro.debuggable=1
+#
+# VERSION_PROPERTIES
+#
+ro.semc.version.sw=1262-6309
+ro.semc.version.sw_revision=7.0.A.3.197
+ro.semc.version.sw_variant=GENERIC
+ro.semc.version.sw_type=user

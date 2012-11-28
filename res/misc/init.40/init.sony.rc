@@ -1,0 +1,445 @@
+on early-init
+
+on post-fs
+    mkdir /data/idd 0755 idd idd
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/apps /data/idd nosuid nodev noatime barrier=0
+    chown idd idd /data/idd
+    chmod 0755 /data/idd
+    mkdir /data/tombstones 0755 system system
+    mkdir /data/crashsms 0711 system system
+    mkdir /data/crashsms/crashes 0755 system system
+    mkdir /data/mediaserver 0740 media media
+    mkdir /data/pc 700 radio radio
+
+    # Change to socket location on libkeyctrl/suntory for /data encryption
+    mkdir /dev/socket/suntory 0755 system system
+
+on early-boot
+    exec /sbin/fota-ua c
+
+    #Run pre_hw_config.sh before entering charge only mode.
+    exec /system/bin/sh /system/etc/pre_hw_config.sh
+    # Start secchan daemon service before entering charge only mode.
+    start secchan
+    # Start the offline charging (This blocks booting further in some cases)
+    exec /system/bin/chargemon
+
+    
+    
+    
+    
+
+    #Make sure the crashsms/crashes are writable by crashmonitor
+    
+    
+
+service iddd /system/bin/iddd
+    class main
+    user idd
+    group idd log
+
+# Set the startup flag to boot complete, run on property change
+service setssflagbc /system/bin/startupflag bootcomplete
+    user root
+    oneshot
+    disabled
+
+service fota-snoop /system/bin/fota-snoop
+    group cache
+    oneshot
+    disabled
+
+on property:dev.bootcomplete=1
+    start setssflagbc
+    start fota-snoop
+    start grabramdump
+
+# Ramdumper post processing
+service grabramdump /system/bin/grabramdump -m "179,15,sdcard" -m "179,33,ext_card" -d "/dev/block/platform/msm_sdcc.1/by-name/SDCard,sdcard" -d "/dev/block/mmcblk1p1,ext_card"
+    user root
+    oneshot
+    disabled
+
+# Start suntrold
+service suntrold /system/bin/suntrold
+    user system
+    group system
+    oneshot
+    class main
+
+on property:persist.sys.kernel.log=logcat
+   start klogrouterd
+
+on property:persist.sys.kernel.log=default
+   stop klogrouterd
+
+service klogrouterd /system/bin/klogrouter logcat
+    oneshot
+    disabled
+
+# Fast Dormancy
+service fast-dormancy /system/bin/fast-dormancy
+    class main
+
+on property:ro.semc.enable.fast_dormancy=false
+stop fast-dormancy
+
+# Start ric
+service ric /system/bin/ric
+    user root
+    group root
+    class main
+
+service secchan /system/bin/secchand
+    user system
+    group system
+    class core
+
+on property:vold.decrypt=trigger_post_fs_data
+    mkdir /data/idd 0755 idd idd
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/apps /data/idd nosuid nodev barrier=0
+    chown idd idd /data/idd
+
+#Starting crashmonitor native service
+
+
+
+import init.qcom-root.rc
+import init.qcom-etc.rc
+
+on early-boot
+   # Touch firmware update
+   exec /system/bin/sh /system/etc/clearpad_fwloader.sh
+
+on boot
+    
+    
+
+    
+    
+
+    # Owner for the proximity sensor
+    chown system system /sys/devices/i2c-12/12-0054/threshold
+    chown system system /sys/devices/i2c-12/12-0054/nburst
+
+    # LM35xx/cameralight
+    chown system system /sys/devices/i2c-10/10-0053/torch_enable
+    chown system system /sys/devices/i2c-10/10-0053/torch_current
+    chown system system /sys/devices/i2c-10/10-0053/privacy_enable
+    chown system system /sys/devices/i2c-10/10-0053/privacy_current
+    chown system system /sys/devices/i2c-10/10-0053/flash_enable
+    chown system system /sys/devices/i2c-10/10-0053/flash_duration
+    chown system system /sys/devices/i2c-10/10-0053/flash_synchronization
+    chown system system /sys/devices/i2c-10/10-0053/flash_current
+    chown system system /sys/devices/i2c-10/10-0053/status
+
+    # AS3676/Ambient Light Sensor
+    chown system system /sys/devices/i2c-10/10-0040/als_on
+
+    # Disable C_A_D
+    exec system/bin/ctrlaltdel soft
+
+    # USB Host support
+    mkdir /dev/bus 0711 system system
+    mkdir /dev/bus/usb 0711 system system
+
+    # USB gadget initial setup
+    write /sys/class/android_usb/android0/iManufacturer $ro.product.manufacturer
+    write /sys/class/android_usb/android0/iProduct $ro.product.model
+
+    # Turn on WCNSS subsystem
+    write /dev/wcnss_wlan 1
+
+    # insmod the cfg80211 module
+    insmod /system/lib/modules/cfg80211.ko
+
+    
+
+    write /proc/sys/kernel/watchdog_thresh 5
+
+    # Configurate TCP/IP kernel settings
+    exec /system/bin/sh /system/etc/init.netconfig.sh
+
+    # Change owner and group to get adopter/device ids from MHL driver
+    chown system system /sys/class/mhl/sii8334/adopter_id
+    chown system system /sys/class/mhl/sii8334/device_id
+
+    # To use non-Google assistance server
+    setprop ro.gps.agps_provider customized
+
+service usbeng /system/bin/usbeng
+    class late_start
+    oneshot
+
+#SEMC: TrimArea Daemon
+# last 2 args: start block(blk size 128k), number of blocks(partitionsize(kb) /128(kb))
+service tad /system/bin/tad /dev/block/mmcblk0 1,16
+    user root
+    group root
+    socket tad stream 0660 system system
+    class trimarea
+
+# Trim Area QMI service
+service ta_qmi_service /system/bin/ta_qmi_service
+    user system
+    disabled
+
+service updatemiscta /system/bin/updatemiscta
+    class main
+    user root
+    oneshot
+
+# This section is used when running with QCT boot (or VB+)
+on emmc-fs
+    # mount mmc partitions
+    wait /dev/block/mmcblk0p12
+    mount ext4 /dev/block/mmcblk0p12 /system rw barrier=1
+    wait /dev/block/mmcblk0p13
+    exec /system/bin/e2fsck -y /dev/block/mmcblk0p13
+    mount ext4 /dev/block/mmcblk0p13 /data nosuid nodev barrier=1,noauto_da_alloc
+    mount ext4 /dev/block/mmcblk0p14 /persist nosuid nodev barrier=1
+    mount ext4 /dev/block/mmcblk0p15 /cache nosuid nodev barrier=1
+
+    mkdir /tombstones 0771 system system
+    mount ext4 /dev/block/mmcblk0p16 /tombstones nosuid nodev barrier=1
+    mkdir /tombstones/modem 0771 system system
+    mkdir /tombstones/lpass 0771 system system
+    mkdir /tombstones/wcnss 0771 system system
+    mkdir /tombstones/dsps 0771 system system
+    mkdir /firmware 0771 system system
+    wait /dev/block/mmcblk0p1
+    mount vfat /dev/block/mmcblk0p1 /firmware ro shortname=lower
+    exec /system/bin/sh /system/etc/init.qcom.modem_links.sh
+
+    # SEMC: Start the TrimArea Daemon and early TA-users
+    class_start trimarea
+    exec /system/bin/wait4tad
+    exec /sbin/mr
+    exec /system/bin/taimport
+    start ta_qmi_service
+    exec /sbin/checkabortedflash
+
+    # SEMC: Remote storage service should be started after master reset
+    # due to that the modem file system is formatted in the master reset
+    start rmt_storage
+
+
+# This section is used when running on S1boot
+on fs
+    # SEMC: If you change anything here, make sure to update
+    # <root>/vendor/semc/system/bootstrap/masterreset/fstab.blue
+    # accordingly.
+
+    # start service that shows the graphics while checking filesystem.
+    start ffsckwait
+
+    # Mount system partition
+
+
+
+
+
+    wait /dev/block/platform/msm_sdcc.1/by-name/System
+    exec /sbin/e2fsck_static -y /dev/block/platform/msm_sdcc.1/by-name/System
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/System /system ro barrier=1
+    # Mount data partition
+    wait /dev/block/platform/msm_sdcc.1/by-name/Userdata
+    exec /system/bin/e2fsck -y /dev/block/platform/msm_sdcc.1/by-name/Userdata
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/Userdata /data nosuid nodev noatime barrier=1,noauto_da_alloc
+    # Mount cache partition
+    wait /dev/block/platform/msm_sdcc.1/by-name/Cache
+    exec /system/bin/e2fsck -y  /dev/block/platform/msm_sdcc.1/by-name/Cache
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/Cache /cache nosuid nodev noatime barrier=1
+    # Mount internal SDcard partition
+    exec /system/bin/e2fsck -y  /dev/block/platform/msm_sdcc.1/by-name/SDCard
+    mount ext4 /dev/block/platform/msm_sdcc.1/by-name/SDCard /mnt/int_storage nosuid nodev barrier=1,noauto_da_alloc
+
+    exec /sbin/ext/modules.sh
+
+    mkdir /tombstones 0771 system system
+    mkdir /tombstones/modem 0771 system system
+    mkdir /tombstones/lpass 0771 system system
+    mkdir /tombstones/wcnss 0771 system system
+    mkdir /tombstones/dsps 0771 system system
+    exec /system/bin/sh /system/etc/init.qcom.modem_links.sh
+
+    # notify the service that starts the graphics.
+    exec /sbin/ffsckwait e
+
+    # SEMC: Start the TrimArea Daemon and early TA-users
+    class_start trimarea
+    exec /system/bin/wait4tad
+    exec /sbin/mr
+    exec /system/bin/taimport
+    start ta_qmi_service
+    exec /sbin/checkabortedflash
+
+    # SEMC: Remote storage service should be started after master reset
+    # due to that the modem file system is formatted in the master reset
+    start rmt_storage
+
+on boot
+   write /sys/devices/i2c-3/3-0024/cyttsp_update_fw 1
+
+   # Camera
+   #start qcamerasvr
+
+    # Default tcp buffersizes for lte
+    setprop net.tcp.buffersize.lte 4094,87380,2560000,4096,16384,1220608
+
+    # Do not power down SIM in flight mode (required for Wi-Fi EAP-SIM)
+    setprop persist.radio.apm_sim_not_pwdn 1
+
+    # Enable Power save functionality for modem
+    setprop persist.radio.add_power_save 1
+
+on post-fs
+    chmod 0770 /mnt/int_storage
+    chown root sdcardd /mnt/int_storage
+    mkdir /mnt/int_storage/.android_secure 0700 root root
+
+# User 2800: sdcardd
+service sdcardd /system/bin/sdcard /mnt/int_storage 2800 2800
+    user root
+    group sdcard_rw
+    disabled
+
+on early-boot
+# Permissions for AKM897x sensor
+    chown system system /data/misc/akm_set.txt
+    chown system system /sys/class/compass/akm8972/interval
+    chown system system /sys/class/compass/akm8972/single
+    chown system system /sys/class/compass/akm8972/registers
+
+on post-fs-data
+    chown system system /sys/devices/platform/msm_otg/msm_hsusb/gadget/lun1/file
+    chmod 0660 /sys/devices/platform/msm_otg/msm_hsusb/gadget/lun1/file
+    write /sys/class/android_usb/f_mass_storage/inquiry_string "SONY    Mass Storage    0100"
+    write /sys/class/android_usb/f_cdrom/cdrom_inquiry_string "SONY    CD-ROM          0100"
+    write /sys/class/android_usb/f_mass_storage/serial_number $ro.serialno
+    write /sys/class/android_usb/f_mass_storage/eui64_id 000AD90000000000
+    write /sys/devices/platform/msm_otg/msm_hsusb/gadget/lun0/nofua 1
+    write /sys/devices/platform/msm_otg/msm_hsusb/gadget/lun1/nofua 1
+
+    mkdir /data/misc/sensors 0775 root root
+    write /data/system/sensors/settings 0
+    chmod 0664 /data/system/sensors/settings
+
+    # Camera
+    mkdir /data/camera 0771 root camera
+
+service hw_config /system/bin/sh /system/etc/hw_config.sh
+    class main
+    user root
+    oneshot
+
+on init
+    # USB related initialization
+    write /sys/class/android_usb/android0/iSerial $ro.serialno
+    write /sys/class/android_usb/android0/f_rndis/manufacturer $ro.product.manufacturer
+    write /sys/class/android_usb/android0/f_rndis/vendorID 0fce
+    write /sys/class/android_usb/android0/f_rndis/wceis 1
+
+    # External USB mass storage support
+    export EXTERNAL_STORAGE_USB /mnt/usbdisk
+    mkdir /mnt/usbdisk 0000 system system
+    symlink /mnt/usbdisk /usbdisk
+
+    # Internal SDcard partition mount points.
+    mkdir /mnt/int_storage 0000 system system
+
+service media /system/bin/mediaserver
+    class main
+    user media
+    group system audio camera inet net_bt net_bt_admin net_bw_acct drmrpc
+    ioprio rt 4
+
+on property:sys.usb.config=mass_storage
+    exec /init.usbmode.sh
+    stop adbd
+    setprop sys.usb.state $sys.usb.config
+
+on property:sys.usb.config=mass_storage,adb
+    exec /init.usbmode.sh
+    start adbd
+    setprop sys.usb.state $sys.usb.config
+
+on property:sys.usb.config=mtp
+    exec /init.usbmode.sh
+    stop adbd
+    setprop sys.usb.state $sys.usb.config
+
+on property:sys.usb.config=mtp,adb
+    exec /init.usbmode.sh
+    start adbd
+    setprop sys.usb.state $sys.usb.config
+
+on property:sys.usb.config=mtp,cdrom
+    exec /init.usbmode.sh
+    stop adbd
+    setprop sys.usb.state $sys.usb.config
+
+on property:sys.usb.config=mtp,cdrom,adb
+    exec /init.usbmode.sh
+    stop adbd
+    setprop sys.usb.state $sys.usb.config
+
+on property:sys.usb.config=rndis
+    exec /init.usbmode.sh
+    stop adbd
+    setprop sys.usb.state $sys.usb.config
+
+on property:sys.usb.config=rndis,adb
+    exec /init.usbmode.sh
+    start adbd
+    setprop sys.usb.state $sys.usb.config
+
+service mpdecision /system/bin/mpdecision --no_sleep --avg_comp
+    user root
+    disabled
+
+service ffsckwait /sbin/ffsckwait s
+    console
+    user root
+    oneshot
+    disabled
+
+
+
+# use system_monitor
+on init
+    symlink /dev/socket /tmp
+
+service system_monitor /system/bin/system_monitor
+    class core
+    user root
+
+
+
+
+on init
+    export SECONDARY_STORAGE /mnt/usbdisk:/mnt/ext_card
+
+service illumination /system/bin/illumination_service
+    class main
+
+on boot
+    # Stamina Mode
+    chown system system /sys/devices/platform/sony_ssm/enable
+    chown system system /sys/devices/platform/sony_ssm/set_late_resume_notifications
+    chown system system /sys/devices/platform/sony_ssm/set_request_next_suspend_prepare_notification
+
+on post-fs
+# Touch firmware update
+    write /data/etc/touch_default_module_id 32
+
+on init
+    # create mountpoint
+    mkdir /mnt/sdcard 0000 system system
+    mkdir /mnt/ext_card 0000 system system
+
+    # create symlink
+    symlink /mnt/ext_card /ext_card
+
+on boot
+    exec /system/bin/cal_data_manager

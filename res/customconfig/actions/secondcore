@@ -1,0 +1,24 @@
+#!/sbin/busybox sh
+
+if [ "a$2" != "a" ];then
+  secondcore=$2
+fi
+
+case "${secondcore}" in
+  hotplug)
+    start mpdecision
+    ;;
+  always-on)
+    stop mpdecision
+    echo 1 > /sys/devices/system/cpu/cpu1/online
+    ;;
+  always-off)
+    stop mpdecision
+    echo 1 > /sys/devices/system/cpu/cpu1/online
+    ;;
+  *)
+    secondcore=hotplug
+    ;;
+esac;
+
+echo $secondcore
