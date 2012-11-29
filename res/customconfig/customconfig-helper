@@ -9,6 +9,7 @@ PROFILE_PATH=/data/.siyah
 TEMP_CONFIG=$PROFILE_PATH/.config.tmp
 LAST_SELECTED=.active.profile
 ACTIVE_PROFILE=${PROFILE_PATH}/${LAST_SELECTED}
+ACTION_SCRIPTS=/res/customconfig/actions
 
 read_dom () {
     local IFS=\>
@@ -17,14 +18,17 @@ read_dom () {
 
 apply_config()
 {
-while read_dom; do
-action=$(echo $ENTITY |  grep -v \<button | sed -e 's/action=/\naction=/g' |grep action|awk -F'"' '{print $2}')
+cat $CONFIG_XML | \
+sed -e 's/\n/ /g' -e 's/>/\n/g' -e '/<button/d' \
+    -e 's/action=/\naction=/g' | \
+grep action | awk -F'"' '{print $2 }' | \
+while read action actionparam;do
 if [ "a$action" != a ];then
-  actionval=`/res/uci.sh $action`
+  actionval=`. $ACTION_SCRIPTS/actions/$action $action $actionparam`
   echo applying: /res/uci.sh $action $actionval
-  eval /res/uci.sh $action $actionval
+  . $ACTION_SCRIPTS/$action $action $actionparam $actionval
 fi
-done < $CONFIG_XML
+done
 }
 
 print_config()
